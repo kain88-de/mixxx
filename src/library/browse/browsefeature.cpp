@@ -11,10 +11,10 @@
 #include <QMenu>
 
 #include "trackinfoobject.h"
+#include "library/library_preferences.h"
 #include "library/treeitem.h"
 #include "library/browse/browsefeature.h"
 #include "library/trackcollection.h"
-#include "library/dao/trackdao.h"
 #include "widget/wlibrarytextbrowser.h"
 #include "widget/wlibrary.h"
 #include "mixxxkeyboard.h"
@@ -29,10 +29,8 @@ BrowseFeature::BrowseFeature(QObject* parent,
           m_pConfig(pConfig),
           m_browseModel(this, pTrackCollection, pRecordingManager),
           m_proxyModel(&m_browseModel),
-          m_pAddtoLibraryAction(NULL),
-          m_pLastRightClickedItem(NULL),
-          m_pTrackCollection(pTrackCollection){
-
+          m_pTrackCollection(pTrackCollection),
+          m_pLastRightClickedItem(NULL) {
     connect(this, SIGNAL(requestAddDir(QString)),
             parent, SLOT(slotRequestAddDir(QString)));
 
@@ -327,7 +325,7 @@ QString BrowseFeature::extractNameFromPath(QString spath) {
 
 QStringList BrowseFeature::getDefaultQuickLinks() const {
     //Default configuration
-    QString mixxx_music_dir = m_pConfig->getValueString(ConfigKey("[Playlist]","Directory"));
+    QString mixxx_music_dir = m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR);
     QString os_music_folder_dir = QDesktopServices::storageLocation(
         QDesktopServices::MusicLocation);
     QString os_documents_folder_dir = QDesktopServices::storageLocation(

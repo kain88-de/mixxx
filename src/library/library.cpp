@@ -6,6 +6,7 @@
 #include <QTranslator>
 
 #include "library/library.h"
+#include "library/library_preferences.h"
 #include "library/libraryfeature.h"
 #include "library/librarytablemodel.h"
 #include "library/sidebarmodel.h"
@@ -19,7 +20,6 @@
 #include "library/mixxxlibraryfeature.h"
 #include "library/autodjfeature.h"
 #include "library/playlistfeature.h"
-#include "library/preparefeature.h"
 #ifdef __PROMO__
 #include "library/promotracksfeature.h"
 #endif
@@ -69,8 +69,12 @@ Library::Library(QObject* parent, ConfigObject<ConfigValue>* pConfig, bool first
     addFeature(new BrowseFeature(this, pConfig, m_pTrackCollection, m_pRecordingManager));
     addFeature(new RecordingFeature(this, pConfig, m_pTrackCollection, m_pRecordingManager));
     addFeature(new SetlogFeature(this, pConfig, m_pTrackCollection));
-    m_pPrepareFeature = new PrepareFeature(this, pConfig, m_pTrackCollection);
-    addFeature(m_pPrepareFeature);
+    m_pAnalysisFeature = new AnalysisFeature(this, pConfig, m_pTrackCollection);
+    connect(m_pPlaylistFeature, SIGNAL(analyzeTracks(QList<int>)),
+            m_pAnalysisFeature, SLOT(analyzeTracks(QList<int>)));
+    connect(m_pCrateFeature, SIGNAL(analyzeTracks(QList<int>)),
+            m_pAnalysisFeature, SLOT(analyzeTracks(QList<int>)));
+    addFeature(m_pAnalysisFeature);
     //iTunes and Rhythmbox should be last until we no longer have an obnoxious
     //messagebox popup when you select them. (This forces you to reach for your
     //mouse or keyboard if you're using MIDI control and you scroll through them...)
@@ -221,7 +225,7 @@ void Library::slotRestoreSearch(const QString& text) {
 
 void Library::slotRefreshLibraryModels() {
    m_pMixxxLibraryFeature->refreshLibraryModels();
-   m_pPrepareFeature->refreshLibraryModels();
+   m_pAnalysisFeature->refreshLibraryModels();
 }
 
 void Library::slotCreatePlaylist() {
@@ -247,48 +251,52 @@ QList<TrackPointer> Library::getTracksToAutoLoad() {
 
 void Library::slotRequestAddDir(QString dir) {
     if (!m_pTrackCollection->getDirectoryDAO().addDirectory(dir)) {
-        QMessageBox::information(0, "Mixxx",
-                tr("Mixxx noticed that the parent directory is already in your"
-                    "library, so it did not add it."));
+        QMessageBox::information(0, tr("Add Directory to Library"),
+                tr("This directory is already in your library."));
     }
     // set at least on directory in the config file so that it will be possible
     // to downgrade from 1.12
-    if (m_pConfig->getValueString(ConfigKey("[Playlist]","Directory")).length() < 1){
-        m_pConfig->set(ConfigKey("[Playlist]","Directory"), dir);
-        m_pConfig->Save();
+    if (m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR).length() < 1){
+        m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, dir);
     }
 }
 
 void Library::slotRequestRemoveDir(QString dir) {
+    // Mark all tracks in this directory as deleted (but don't purge them in
+    // case the user re-adds them manually).
     m_pTrackCollection->getTrackDAO().markTracksAsMixxxDeleted(dir);
-    m_pTrackCollection->getDirectoryDAO().purgeDirectory(dir);
-    // also update the config file if necessary so that downgrading is still
-    // possible
-    QString confDir = m_pConfig->getValueString(ConfigKey("[Playlist]","Directory"));
+
+    // Remove the directory from the directory list.
+    m_pTrackCollection->getDirectoryDAO().removeDirectory(dir);
+
+    // Also update the config file if necessary so that downgrading is still
+    // possible.
+    QString confDir = m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR);
+
+    // TODO(rryan): String equality here is brittle. We should use QDir.
     if (dir == confDir) {
         QStringList dirList = m_pTrackCollection->getDirectoryDAO().getDirs();
         if (!dirList.isEmpty()) {
-            m_pConfig->set(ConfigKey("[Playlist]","Directory"), dirList.first());
-        // Save empty string so that an old version of mixxx know it has to ask
-        // for a new directory
-        } else { 
-            m_pConfig->set(ConfigKey("[Playlist]","Directory"), QString() );
+            m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, dirList.first());
+        } else {
+            // Save empty string so that an old version of mixxx knows it has to
+            // ask for a new directory.
+            m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, QString());
         }
-        m_pConfig->Save();
     }
 }
 
 void Library::slotRequestRelocateDir(QString oldDir, QString newDir) {
-    QSet<int> movedIds = m_pTrackCollection->getDirectoryDAO().relocateDirectory(oldDir,newDir);
+    QSet<int> movedIds = m_pTrackCollection->getDirectoryDAO().relocateDirectory(oldDir, newDir);
+
     // Clear cache to that all TIO with the old dir information get updated
     m_pTrackCollection->getTrackDAO().clearCache();
     m_pTrackCollection->getTrackDAO().databaseTracksMoved(movedIds, QSet<int>());
     // also update the config file if necessary so that downgrading is still
     // possible
-    QString conDir = m_pConfig->getValueString(ConfigKey("[Playlist]","Directory"));
+    QString conDir = m_pConfig->getValueString(PREF_LEGACY_LIBRARY_DIR);
     if (oldDir == conDir) {
-        m_pConfig->set(ConfigKey("[Playlist]","Directory"), newDir);
-        m_pConfig->Save();
+        m_pConfig->set(PREF_LEGACY_LIBRARY_DIR, newDir);
     }
 }
 

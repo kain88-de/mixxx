@@ -13,14 +13,14 @@ class DirectoryDAO : public DAO {
     virtual ~DirectoryDAO();
 
     void initialize();
-    void setDatabase(QSqlDatabase& database) { m_database = database; };
-    bool addDirectory(QString dir);
-    bool purgeDirectory(QString dir);
-    QSet<int> relocateDirectory(QString oldFolder,QString newFolder);
+    void setDatabase(QSqlDatabase& database) { m_database = database; }
+    bool addDirectory(const QString& dir);
+    bool removeDirectory(const QString& dir);
+    QSet<int> relocateDirectory(const QString& oldFolder, const QString& newFolder);
     QStringList getDirs();
 
   private:
-    QSqlDatabase m_database;
+    QSqlDatabase& m_database;
 };
 
 #endif //DIRECTORYDAO_H

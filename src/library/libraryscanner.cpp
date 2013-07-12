@@ -26,7 +26,7 @@
 #include "library/queryutil.h"
 #include "trackinfoobject.h"
 
-LibraryScanner::LibraryScanner(TrackCollection* collection) 
+LibraryScanner::LibraryScanner(TrackCollection* collection)
               : m_pCollection(collection),
                 m_pProgress(NULL),
                 m_libraryHashDao(m_database),
@@ -112,8 +112,7 @@ LibraryScanner::~LibraryScanner() {
         qDebug() << query.lastError();
     }
 
-    QString dir;
-    foreach (dir, deletedDirs) {
+    foreach (QString dir, deletedDirs) {
         m_pCollection->getTrackDAO().markTrackLocationsAsDeleted(dir);
     }
     transaction.commit();
@@ -210,42 +209,41 @@ void LibraryScanner::run() {
     // when we rescan, we'll mark any directory that does still exist as verified.
     m_libraryHashDao.invalidateAllDirectories();
 
-    // Mark all the tracks in the directory as needing verification of 
-    // their existance... (ie. we want to check they're still on your hard 
+    // Mark all the tracks in the directory as needing verification of
+    // their existance... (ie. we want to check they're still on your hard
     // drive where we think they are)
     m_trackDao.invalidateTrackLocationsInLibrary();
 
     qDebug() << "Recursively scanning library.";
-    // Start scanning the library.
-    // this will prepare some querys in TrackDAO, this needs be done because
-    // TrackCollection will call TrackDAO::addTracksAdd and this
-    // function needs the querys
-    m_trackDao.addTracksPrepare();
-    QStringList verifiedDirectories;
 
+    // Start scanning the library. This prepares insertion queries in TrackDAO
+    // (must be called before calling addTracksAdd) and begins a transaction.
+    m_trackDao.addTracksPrepare();
+
+    QStringList verifiedDirectories;
     QStringList dirs = m_directoryDao.getDirs();
-    bool bScanFinishedCleanly=false;
-    // recursivly scan each dir that is saved in the directories table
-    foreach (QString dir , dirs) {
-        bScanFinishedCleanly = recursiveScan(dir,verifiedDirectories);
+    bool bScanFinishedCleanly = false;
+    // Recursivly scan each directory in the directories table.
+    foreach (const QString& dir, dirs) {
+        bScanFinishedCleanly = recursiveScan(dir, verifiedDirectories);
         if (!bScanFinishedCleanly) {
             qDebug() << "Recursive scaning (" << dir << ") interrupted.";
         } else {
             qDebug() << "Recursive scaning (" << dir << ") finished cleanly.";
         }
     }
-    // After the recursive scan of all watched library directories their are
+
+    // After the recursive scan of all watched library directories there are
     // only a few songs left to check. Mainly the ones that are not inside one
     // of the library directories or have been moved/renamed/... since the last
-    // scan
-    m_trackDao.verifyRemainingTracks(&m_bCancelLibraryScan);
+    // scan.
+    if (bScanFinishedCleanly) {
+        bScanFinishedCleanly = m_trackDao.verifyRemainingTracks(&m_bCancelLibraryScan);
+    }
 
-    // Runs inside a transaction
-    m_trackDao.addTracksFinish();
-
-    // Start a transaction for all the library hashing (moved file detection)
-    // stuff.
-    ScopedTransaction transaction(m_database);
+    // Clean up and commit or rollback the transaction depending on
+    // bScanFinishedCleanly.
+    m_trackDao.addTracksFinish(!bScanFinishedCleanly);
 
     // At the end of a scan, mark all tracks and directories that
     // weren't "verified" as "deleted" (as long as the scan wasn't canceled
@@ -256,6 +254,10 @@ void LibraryScanner::run() {
     QSet<int> tracksMovedSetOld;
     QSet<int> tracksMovedSetNew;
     if (bScanFinishedCleanly) {
+        // Start a transaction for all the library hashing (moved file detection)
+        // stuff.
+        ScopedTransaction transaction(m_database);
+
         qDebug() << "Marking unchanged directories and tracks as verified";
         m_libraryHashDao.updateDirectoryStatuses(verifiedDirectories, false, true);
         m_trackDao.markTracksInDirectoriesAsVerified(verifiedDirectories);
@@ -268,7 +270,7 @@ void LibraryScanner::run() {
         // Check to see if the "deleted" tracks showed up in another location,
         // and if so, do some magic to update all our tables.
         qDebug() << "Detecting moved files.";
-        m_trackDao.detectMovedFiles(tracksMovedSetOld, tracksMovedSetNew);
+        m_trackDao.detectMovedFiles(&tracksMovedSetOld, &tracksMovedSetNew);
 
         // Remove the hashes for any directories that have been
         // marked as deleted to clean up. We need to do this otherwise
@@ -279,7 +281,6 @@ void LibraryScanner::run() {
         transaction.commit();
         qDebug() << "Scan finished cleanly";
     } else {
-        transaction.rollback();
         qDebug() << "Scan cancelled";
     }
 
@@ -288,7 +289,8 @@ void LibraryScanner::run() {
     //m_pProgress->slotStopTiming();
     m_database.close();
 
-    // Update BaseTrackCache via the main TrackDao
+    // Update BaseTrackCache via the main TrackDao.
+    // TODO(rryan): Not ok! We are in the library scanner thread. Use a signal instead.
     m_pCollection->getTrackDAO().databaseTracksMoved(tracksMovedSetOld, tracksMovedSetNew);
 
     emit(scanFinished());
