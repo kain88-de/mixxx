@@ -1,0 +1,10 @@
+language: cpp
+script:
+      - scons test=1
+      - mixxx-test
+compiler:
+      - clang
+      - gcc
+before_install:
+      - sudo apt-get update -qq
+      - sudo apt-get install -y libqt4-dev libqt4-sql-sqlite libportmidi-dev libshout-dev libtag1-dev libprotobuf-dev protobuf-compiler libvamp-hostsdk3 vamp-plugin-sdk libusb-1.0-0-dev libfftw3-dev libchromaprint-dev librubberband-dev
