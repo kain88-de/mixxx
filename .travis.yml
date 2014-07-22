@@ -1,7 +1,7 @@
 language: cpp
 script:
       - scons test=1
-      - mixxx-test
+      - ./mixxx-test
 compiler:
       - clang
       - gcc
