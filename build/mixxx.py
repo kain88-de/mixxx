@@ -193,6 +193,9 @@ class MixxxBuild(object):
         self.compiler_is_gcc = 'gcc' in self.env['CC']
         self.compiler_is_clang = 'clang' in self.env['CC']
 
+        if self.compiler_is_clang:
+            self.env.Append(CPPDEFINES='__extern_always_inline=inline')
+
         self.virtualize_build_dir()
 
         if self.toolchain_is_gnu:
